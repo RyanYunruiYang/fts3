@@ -40,7 +40,7 @@ public:
     Gfal2Task(std::string const & operation) :
         gfal2_ctx(operation), counter(global_task_counter)
     {
-        global_task_counter = ++global_task_counter % 100000;
+        global_task_counter = (global_task_counter + 1) % MAX_COUNTER;
     }
 
     /// Copy constructor (deleted)
@@ -218,6 +218,9 @@ private:
 
     /// Global task counter
     static int global_task_counter;
+
+    /// Global task counter max number
+    constexpr static int MAX_COUNTER = 100000;
 };
 
 #endif // GFAL2TASK_H_
