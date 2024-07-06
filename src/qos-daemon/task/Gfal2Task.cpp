@@ -28,9 +28,11 @@
 
 using namespace fts3::common;
 
+/// Initialization of static Gfal2Task variables
 std::string Gfal2Task::infosys;
 bool Gfal2Task::http_log_content;
 int Gfal2Task::global_task_counter = 0;
+std::mutex Gfal2Task::task_counter_mtx;
 
 
 void Gfal2Task::setProxy(const JobContext &ctx)

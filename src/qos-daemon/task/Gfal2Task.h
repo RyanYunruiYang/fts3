@@ -24,6 +24,7 @@
 
 #include <sstream>
 #include <vector>
+#include <mutex>
 #include <boost/any.hpp>
 #include <gfal_api.h>
 
@@ -37,9 +38,10 @@ class Gfal2Task
 public:
 
     /// Default constructor
-    Gfal2Task(std::string const & operation) :
-        gfal2_ctx(operation), counter(global_task_counter)
+    Gfal2Task(std::string const & operation) : gfal2_ctx(operation)
     {
+        std::lock_guard<std::mutex> lock(task_counter_mtx);
+        counter = global_task_counter;
         global_task_counter = (global_task_counter + 1) % MAX_COUNTER;
     }
 
@@ -218,6 +220,9 @@ private:
 
     /// Global task counter
     static int global_task_counter;
+
+    /// Global task counter mutex
+    static std::mutex task_counter_mtx;
 
     /// Global task counter max number
     constexpr static int MAX_COUNTER = 100000;
