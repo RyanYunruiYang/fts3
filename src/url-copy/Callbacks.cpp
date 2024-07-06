@@ -45,6 +45,8 @@ void performanceCallback(gfalt_transfer_status_t h, const char*, const char*, gp
         transfer->transferredBytes = trans;
         transfer->stats.elapsedAtPerf = elapsed * 1000;
     }
+
+    // call send def in counterreporter func
 }
 
 /// gfal2 GridFTP plugin gives us source and destination urls as
