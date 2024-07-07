@@ -107,8 +107,7 @@ void OptimizerService::runService()
     Optimizer optimizer(
         db::DBSingleton::instance().getDBObjectInstance()->getOptimizerDataSource(),
         &optimizerCallbacks
-    ); //         IntegratedDataSource(db::DBSingleton::instance().getDBObjectInstance()->getOptimizerDataSource(), &optimizerCallbacks)
-
+    );
     optimizer.setSteadyInterval(optimizerSteadyInterval);
     optimizer.setMaxNumberOfStreams(maxNumberOfStreams);
     optimizer.setMaxSuccessRate(maxSuccessRate);
