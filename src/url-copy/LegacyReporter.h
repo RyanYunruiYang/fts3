@@ -27,9 +27,13 @@ private:
     UrlCopyOpts opts;
     zmq::context_t zmqContext;
     zmq::socket_t zmqPingSocket;
+    zmq::socket_t zmqAggSocket;
+
 
 public:
     LegacyReporter(const UrlCopyOpts &opts);
+
+    virtual void sendAggMessage(const std::string &msg);
 
     virtual void sendTransferStart(const Transfer&, Gfal2TransferParams&);
 

@@ -24,6 +24,7 @@
 
 #include "../BaseService.h"
 #include "../heartbeat/HeartBeat.h"
+#include "../streamer/StreamerService.h"
 
 namespace fts3 {
 namespace server {
@@ -33,9 +34,11 @@ class OptimizerService: public BaseService
 {
 protected:
     HeartBeat *beat;
+    OptimizerDataSource *datasource;
+    // Optimizer *optimizer;
 
 public:
-    OptimizerService(HeartBeat *beat);
+    OptimizerService(HeartBeat *beat, OptimizerDataSource *datasource);
     virtual void runService();
 };
 

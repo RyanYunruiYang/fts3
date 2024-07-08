@@ -25,6 +25,7 @@
 #include "db/generic/StoragePairState.h"
 #include "msg-bus/consumer.h"
 #include "msg-bus/producer.h"
+// #include "MySqlOptimizerDataSource.h"
 
 OptimizerMode getOptimizerModeInner(soci::session &sql, const std::string &source, const std::string &dest);
 
@@ -113,6 +114,7 @@ public:
 
     /// Optimizer data source
     virtual fts3::optimizer::OptimizerDataSource* getOptimizerDataSource();
+    // virtual MySqlOptimizerDataSource* getMySqlOptimizerDataSource();
 
     /// Checks if there are available slots to run transfers for the given pair
     /// @param sourceStorage        The source storage  (as protocol://host)

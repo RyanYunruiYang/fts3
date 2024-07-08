@@ -23,6 +23,7 @@
 #include "OptimizerService.h"
 #include "Optimizer.h"
 
+#include "db/mysql/IntegratedOptimizerDataSource.h"
 #include "db/generic/SingleDbInstance.h"
 
 
@@ -78,7 +79,8 @@ public:
 };
 
 
-OptimizerService::OptimizerService(HeartBeat *beat): BaseService("OptimizerService"), beat(beat)
+OptimizerService::OptimizerService(HeartBeat *beat, OptimizerDataSource *ds): BaseService("OptimizerService"), 
+                                    beat(beat),datasource(ds)
 {
 }
 
@@ -104,10 +106,27 @@ void OptimizerService::runService()
         config::ServerConfig::instance().get<std::string>("MessagingDirectory")
     );
 
+    // Optimizer optimizer(
+    //    db::DBSingleton::instance().getDBObjectInstance()->getOptimizerDataSource(),
+    //    &optimizerCallbacks
+    // );
+
+    // TODO: change all optimizer. to optimizer->
+    /*
+    Step 1: Create MySQL Data Source (singleton)
+    Step 2: Create a streamer data source
+    */
+    //auto mySqlDS = db::DBSingleton::instance().getDBObjectInstance()->getOptimizerDataSource();
+    //auto streamDS = aggregator->getStreamingDataSource();
+
+    //auto iod =  IntegratedOptimizerDataSource(aggregator->getStreamingData());
+    
+
     Optimizer optimizer(
-        db::DBSingleton::instance().getDBObjectInstance()->getOptimizerDataSource(),
+        datasource,
         &optimizerCallbacks
     );
+
     optimizer.setSteadyInterval(optimizerSteadyInterval);
     optimizer.setMaxNumberOfStreams(maxNumberOfStreams);
     optimizer.setMaxSuccessRate(maxSuccessRate);

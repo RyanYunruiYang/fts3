@@ -92,7 +92,7 @@ void HeartBeat::runService()
             db::DBSingleton::instance().getDBObjectInstance()
                 ->updateHeartBeat(&index, &count, &start, &end, serviceName);
             FTS3_COMMON_LOGGER_NEWLOG(DEBUG)
-                << "Systole: host " << index << " out of " << count
+                << "RY DEV: Systole: host " << index << " out of " << count
                 << " [" << start << ':' << end << ']'
                 << commit;
 

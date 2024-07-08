@@ -32,6 +32,7 @@
 class UrlCopyOpts;
 using fts3::common::Uri;
 
+class Reporter;
 
 class Transfer
 {
@@ -134,6 +135,9 @@ public:
     double instantaneousThroughput; // In KiB/s
     uint64_t transferredBytes;
     uint64_t previousPingTransferredBytes;
+
+    // DEV: Transfer Socket
+    Reporter* aggReporterPtr = nullptr;
 
     // Log file
     std::string logFile;

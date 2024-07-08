@@ -28,6 +28,8 @@ set(fts_db_mysql_SOURCES
         Config.cpp
         Credentials.cpp
         OptimizerDataSource.cpp
+        IntegratedOptimizerDataSource.cpp
+        MySqlOptimizerDataSource.cpp        
         SanityChecks.cpp
         MultihopSanityCheck.cpp
 )

@@ -32,6 +32,7 @@ include_directories(
 	${JSONCPP_INCLUDE_DIRS}
 	${DAVIX_INCLUDE_DIR}
 	${CRYPTOPP_INCLUDE_DIRS}
+    /usr/include/soci
 )
 
 # Server lib
@@ -47,6 +48,7 @@ list(REMOVE_ITEM fts_server_lib_sources "main.cpp")
 add_library(fts_server_lib SHARED ${fts_server_lib_sources})
 target_link_libraries(fts_server_lib
     fts_db_generic
+    fts_db_mysql
 	fts_msg_bus
     fts_proxy
     gridsite

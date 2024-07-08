@@ -72,6 +72,7 @@ void clearEnvironment()
 
 int main(int argc, char *argv[])
 {
+    FTS3_COMMON_LOGGER_NEWLOG(INFO) << "RY DEV: fts-url-copy started" << commit;
     if (getuid() == 0 || geteuid() == 0) {
         FTS3_COMMON_LOGGER_NEWLOG(WARNING) << "Running as root! This is not recommended." << commit;
     }

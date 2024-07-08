@@ -24,10 +24,25 @@ using fts3::common::commit;
 
 
 LegacyReporter::LegacyReporter(const UrlCopyOpts &opts): producer(opts.msgDir), opts(opts),
-    zmqContext(1), zmqPingSocket(zmqContext, ZMQ_PUB)
+    zmqContext(1),
+    zmqPingSocket(zmqContext, ZMQ_PUB),
+    zmqAggSocket(zmqContext, ZMQ_PUSH)
 {
     std::string address = std::string("ipc://") + opts.msgDir + "/url_copy-ping.ipc";
     zmqPingSocket.connect(address.c_str());
+
+    std::string hostName = "127.0.0.1"; // formerly aggregator-test
+    std::string port = "5555";
+    std::string aggAddress = std::string("tcp://") + hostName + ":" + port;
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Connecting to aggregator at " << aggAddress << commit;
+    zmqAggSocket.connect(aggAddress.c_str());
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Connected to aggregator" << commit;
+}
+
+void LegacyReporter::sendAggMessage(const std::string &msg) {
+    zmq::message_t message(msg.c_str(), msg.size());
+    zmqAggSocket.send(message);
+    // TODO: free message
 }
 
 
@@ -91,6 +106,13 @@ void LegacyReporter::sendTransferStart(const Transfer &transfer, Gfal2TransferPa
         std::string msgReturnValue = MsgIfce::getInstance()->SendTransferStartMessage(producer, started);
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "Transfer start message content: " << msgReturnValue << commit;
     }
+
+    // Send the transfer start message to the aggregator
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Sending aggregation message to the aggregator" << commit;
+    std::string msg = "TRANSFER_START " + started.transfer_id
+                            + " " + started.job_id
+                            + " " + std::to_string(started.file_id);
+    sendAggMessage(msg);
 }
 
 

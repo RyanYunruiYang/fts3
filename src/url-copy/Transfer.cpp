@@ -21,6 +21,7 @@
 #include <iomanip>
 #include <sstream>
 #include "Transfer.h"
+#include "Reporter.h"
 
 
 Transfer::Transfer() : fileId(0), userFileSize(0), scitag(0),

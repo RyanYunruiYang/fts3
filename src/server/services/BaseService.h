@@ -54,6 +54,7 @@ public:
     virtual void runService() = 0;
 
     virtual void operator() () {
+        FTS3_COMMON_LOGGER_NEWLOG(INFO) << "DEV: starting service" << fts3::common::commit;
         FTS3_COMMON_LOGGER_NEWLOG(INFO) << "Starting " << getServiceName() << fts3::common::commit;
         try {
             runService();

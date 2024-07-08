@@ -43,6 +43,9 @@ public:
 
     /// Periodic notifications
     virtual void sendPing(Transfer&) = 0;
+
+    /// Notify the aggregator
+    virtual void sendAggMessage(const std::string &msg) = 0;
 };
 
 #endif // FTS3_REPORTER_H

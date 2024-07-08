@@ -512,6 +512,7 @@ void UrlCopyProcess::run(void)
 
         // Notify we got it
         FTS3_COMMON_LOGGER_NEWLOG(INFO) << "Transfer accepted" << commit;
+        transfer.aggReporterPtr = &reporter;
         reporter.sendTransferStart(transfer, params);
 
         // Run the transfer

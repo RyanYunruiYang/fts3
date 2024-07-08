@@ -30,9 +30,11 @@
 #include "services/transfers/CancelerService.h"
 #include "services/heartbeat/HeartBeat.h"
 #include "services/optimizer/OptimizerService.h"
+#include "services/streamer/StreamerService.h"
 #include "services/transfers/MessageProcessingService.h"
 #include "services/transfers/SupervisorService.h"
-
+#include "db/mysql/IntegratedOptimizerDataSource.h"
+#include "db/generic/SingleDbInstance.h"
 
 namespace fts3 {
 namespace server {
@@ -90,7 +92,17 @@ void Server::start()
         boost::this_thread::sleep(boost::posix_time::seconds(12));
     }
 
-    addService(new OptimizerService(heartBeatService));
+    // first need to create StreamerDataSource
+    auto streamerDataSource = new StreamerDataSource();
+    // build StreamerService using the datastore in StreamerDataSource
+    auto streamerService = new StreamerService(streamerDataSource);
+    addService(streamerService);
+
+    // create IntegratorOptimizerDataSource which contains MySQLDataSource and StreamerDataSource
+    OptimizerDataSource* mySqlDS = db::DBSingleton::instance().getDBObjectInstance()->getOptimizerDataSource();
+    IntegratedOptimizerDataSource* iod = new IntegratedOptimizerDataSource(mySqlDS, streamerDataSource); 
+
+    addService(new OptimizerService(heartBeatService, iod));
     addService(new TransfersService);
     addService(new ReuseTransfersService);
     addService(new SupervisorService);
