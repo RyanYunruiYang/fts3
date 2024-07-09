@@ -2,7 +2,7 @@
 #include "common/Logger.h"
 using namespace fts3::common;
 
-StreamerDataSource::StreamerDataSource(): count(0) {
+StreamerDataSource::StreamerDataSource(): numPM(0) {
     FTS3_COMMON_LOGGER_NEWLOG(INFO) << "StreamerDataSource created" << commit;
 }
 
@@ -13,7 +13,7 @@ StreamerDataSource::~StreamerDataSource() {
 
 // Return a list of pairs with active or submitted transfers
 std::list<Pair> StreamerDataSource::getActivePairs(void) {
-    FTS3_COMMON_LOGGER_NEWLOG(INFO) << "DEV: StreamerDataSource getActivePairs" << commit;
+    FTS3_COMMON_LOGGER_NEWLOG(INFO) << "DEV: StreamerDataSource getActivePairs numPM=" << numPM << commit;
     return std::list<Pair>();
 }
 

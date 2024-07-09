@@ -48,8 +48,12 @@ void performanceCallback(gfalt_transfer_status_t h, const char*, const char*, gp
 
         // Send the transfer start message to the aggregator
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Sending aggregation callback to the aggregator" << commit;
-        std::string msg = "TRANSFER_CALLBACK_PM ";
+        // std::string msg = "TRANSFER_CALLBACK_PM ";
         LegacyReporter* aggLegReporter = (LegacyReporter*) transfer->aggReporterPtr;
+        std::string msg = aggLegReporter->serializeStreamerMessage("TRANSFER_CALLBACK_PM", 
+                                                transfer->source.host, transfer->destination.host,
+                                                transfer->jobId, transfer->fileId,
+                                                millisecondsSinceEpoch(), transfer->transferredBytes);
         aggLegReporter->sendAggMessage(msg);        
     }
 }

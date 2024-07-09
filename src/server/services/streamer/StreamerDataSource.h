@@ -2,19 +2,62 @@
 #ifndef StreamerDataSource_H_ // Updated ifndef directive
 #define StreamerDataSource_H_ // Updated define directive
 
+#include <map>
+#include <unordered_map>
+#include "../BaseService.h"
 #include "server/services/optimizer/Optimizer.h"
 
 using namespace fts3::optimizer;
+using namespace fts3::server;
 
 class StreamerService;
 
-class StreamerDataSource: public OptimizerDataSource {
-private:
-    // std::stirng src, dst;
-    // std::map<pair, int> m_sdf_totalbytes;
-    int count;
+//namespace fts3 {
+//namespace streamer {
 
+struct StreamerPairState {
+    int totalDuration;
+    int finishedCount;
+    int activeCount;
+    int failedCount;
+    long long totalTransferredMB;
+    long long totalFileSizeMB;
+    long long totalFileSizeSquaredMB;
+     
+/*
+    time_t timestamp;
+    double throughput;
+    time_t avgDuration;
+    double successRate;
+    int retryCount;
+    int activeCount;
+    int queueSize;
+    // Exponential Moving Average
+    double ema;
+    // Filesize statistics
+    double filesizeAvg;
+    double filesizeStdDev;
+    // Optimizer last decision
+    int connections;
+*/
+    StreamerPairState(): totalDuration(0), finishedCount(0), activeCount(0), failedCount(0),
+        totalTransferredMB(0), totalFileSizeMB(0), totalFileSizeSquaredMB(0) {}
+    StreamerPairState(int totalDuration, int finishedCount, int activeCount, int failedCount,
+        long long totalTransferredMB, long long totalFileSizeMB, long long totalFileSizeSquaredMB):
+        totalDuration(totalDuration), finishedCount(finishedCount), activeCount(activeCount),
+        failedCount(failedCount), totalTransferredMB(totalTransferredMB), totalFileSizeMB(totalFileSizeMB),
+        totalFileSizeSquaredMB(totalFileSizeSquaredMB) {}
+};
+
+class StreamerDataSource: public OptimizerDataSource {
 public:
+    //TODO: Need to make the following private
+    // std::stirng src, dst;
+    time_t t0;
+    std::map<Pair, StreamerPairState> m_sd;  
+    int numPM;
+
+//public:
     StreamerDataSource();
     ~StreamerDataSource();
     friend class StreamerService;
@@ -55,5 +98,6 @@ public:
     // Permanently register the number of streams per active
     void storeOptimizerStreams(const Pair &pair, int streams);
 };
-
+//}
+//}
 #endif // StreamerDataSource_H_ // Updated endif directive
