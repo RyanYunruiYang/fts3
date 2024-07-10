@@ -184,6 +184,7 @@ bool Optimizer::optimizeConnectionsForPair(OptimizerMode optMode, const Pair &pa
 
     boost::posix_time::time_duration timeFrame = calculateTimeFrame(current.avgDuration);
 
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "Calling getThroughputInfo for " << pair << commit;
     dataSource->getThroughputInfo(pair, timeFrame,
         &current.throughput, &current.filesizeAvg, &current.filesizeStdDev);
     current.successRate = dataSource->getSuccessRateForPair(pair, timeFrame, &current.retryCount);

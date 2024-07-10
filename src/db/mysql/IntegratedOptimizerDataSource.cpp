@@ -14,8 +14,19 @@ IntegratedOptimizerDataSource::IntegratedOptimizerDataSource(OptimizerDataSource
 // Return a list of pairs with active or submitted transfers
 std::list<Pair> IntegratedOptimizerDataSource::getActivePairs(void) {
     FTS3_COMMON_LOGGER_NEWLOG(INFO) << "DEV: IODS Dispatching getActivePairs" << commit;
-    streamData->getActivePairs();
-    return mySqlData->getActivePairs();
+    std::list<Pair> msPairs = mySqlData->getActivePairs();
+    std::list<Pair> sPairs = streamData->getActivePairs();
+
+    FTS3_COMMON_LOGGER_NEWLOG(INFO) << "AAC: msPairs:" << commit;
+    for (const auto& pair : msPairs) {
+        FTS3_COMMON_LOGGER_NEWLOG(INFO) << pair << commit;
+    }
+    FTS3_COMMON_LOGGER_NEWLOG(INFO) << "AAC: sPairs:" << commit;
+    for (const auto& pair : sPairs) {
+        FTS3_COMMON_LOGGER_NEWLOG(INFO) << pair << commit;
+    }
+    
+    return sPairs;
 }
 
 // Return the optimizer configuration value
@@ -36,6 +47,7 @@ int IntegratedOptimizerDataSource::getOptimizerValue(const Pair& pair) {
 // Get the weighted throughput for the pair
 void IntegratedOptimizerDataSource::getThroughputInfo(const Pair &pair, const boost::posix_time::time_duration &interval,
     double *throughput, double *filesizeAvg, double *filesizeStdDev) {
+    streamData->getThroughputInfo(pair, interval, throughput, filesizeAvg, filesizeStdDev);
     return mySqlData->getThroughputInfo(pair, interval, throughput, filesizeAvg, filesizeStdDev);
 }
 
@@ -51,7 +63,7 @@ double IntegratedOptimizerDataSource::getSuccessRateForPair(const Pair &pair, co
 
 // Get the number of transfers in the given state
 int IntegratedOptimizerDataSource::getActive(const Pair &pair) {
-    return mySqlData->getActive(pair);
+    return streamData->getActive(pair);
 }
 int IntegratedOptimizerDataSource::getSubmitted(const Pair &pair) {
     return mySqlData->getSubmitted(pair);

@@ -2,7 +2,7 @@
 #include "common/Logger.h"
 using namespace fts3::common;
 
-StreamerDataSource::StreamerDataSource(): numPM(0) {
+StreamerDataSource::StreamerDataSource(): numPM(0), cyclicPerfBuffer(5) {
     FTS3_COMMON_LOGGER_NEWLOG(INFO) << "StreamerDataSource created" << commit;
 }
 
@@ -14,7 +14,11 @@ StreamerDataSource::~StreamerDataSource() {
 // Return a list of pairs with active or submitted transfers
 std::list<Pair> StreamerDataSource::getActivePairs(void) {
     FTS3_COMMON_LOGGER_NEWLOG(INFO) << "DEV: StreamerDataSource getActivePairs numPM=" << numPM << commit;
-    return std::list<Pair>();
+    // Print the set of active pairs
+    for (const auto& pair : s_activePairs) {
+        FTS3_COMMON_LOGGER_NEWLOG(INFO) << "\tAAB Active Pair: " << pair << commit;
+    }
+    return std::list<Pair>(s_activePairs.begin(), s_activePairs.end());
 }
 
 // Return the optimizer configuration value
@@ -35,7 +39,11 @@ int StreamerDataSource::getOptimizerValue(const Pair&) {
 // Get the weighted throughput for the pair
 void StreamerDataSource::getThroughputInfo(const Pair &, const boost::posix_time::time_duration &,
     double *, double *, double *) {
-    return;
+    FTS3_COMMON_LOGGER_NEWLOG(INFO) << "Streamer version of getThroughputInfo called" << commit;
+    // print out the totalFileSizeMB for each of the StreamerPairStates
+    for (const auto& pairState : cyclicPerfBuffer.pairStateArray) {
+        FTS3_COMMON_LOGGER_NEWLOG(INFO) << "AAD: TotalFileSizeMB: " << pairState.first->totalFileSizeMB << commit;
+    }
 }
 
 time_t StreamerDataSource::getAverageDuration(const Pair &, const boost::posix_time::time_duration &) {
@@ -49,8 +57,9 @@ double StreamerDataSource::getSuccessRateForPair(const Pair &, const boost::posi
 }
 
 // Get the number of transfers in the given state
-int StreamerDataSource::getActive(const Pair &) {
-    return 0;
+int StreamerDataSource::getActive(const Pair &pair) {
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAD getActive: " << m_sd[pair].activeCount << commit;
+    return m_sd[pair].activeCount;
 }
 int StreamerDataSource::getSubmitted(const Pair &) {
     return 0;

@@ -3,7 +3,9 @@
 #define StreamerDataSource_H_ // Updated define directive
 
 #include <map>
+#include <set> //TODO: move to unordered_set
 #include <unordered_map>
+#include <vector>
 #include "../BaseService.h"
 #include "server/services/optimizer/Optimizer.h"
 
@@ -15,46 +17,102 @@ class StreamerService;
 //namespace fts3 {
 //namespace streamer {
 
+enum EventType {
+    TRANSFER_START,
+    TRANSFER_CALLBACK_PM,
+    TRANSFER_COMPLETE,
+    UNDEFINED
+};
+
+struct StreamerPerfMarker {
+    EventType eventType;
+    std::string src;
+    std::string dst;
+    std::string jobId;
+    uint64_t fileId;
+    uint64_t timestamp;
+    uint64_t transferred; // in bytes
+    uint64_t userFileSize; // in bytes?
+    double instantaneousThroughput; // for cross reference purpose
+};
+
 struct StreamerPairState {
-    int totalDuration;
+    int epoch;
     int finishedCount;
     int activeCount;
     int failedCount;
-    long long totalTransferredMB;
-    long long totalFileSizeMB;
-    long long totalFileSizeSquaredMB;
+    uint64_t totalDuration;  // in seconds
+    uint64_t totalTransferredMB;
+    uint64_t totalFileSizeMB;
+    uint64_t totalFileSizeSquaredMB;
      
-/*
-    time_t timestamp;
-    double throughput;
-    time_t avgDuration;
-    double successRate;
-    int retryCount;
-    int activeCount;
-    int queueSize;
-    // Exponential Moving Average
-    double ema;
-    // Filesize statistics
-    double filesizeAvg;
-    double filesizeStdDev;
-    // Optimizer last decision
-    int connections;
-*/
-    StreamerPairState(): totalDuration(0), finishedCount(0), activeCount(0), failedCount(0),
-        totalTransferredMB(0), totalFileSizeMB(0), totalFileSizeSquaredMB(0) {}
-    StreamerPairState(int totalDuration, int finishedCount, int activeCount, int failedCount,
-        long long totalTransferredMB, long long totalFileSizeMB, long long totalFileSizeSquaredMB):
-        totalDuration(totalDuration), finishedCount(finishedCount), activeCount(activeCount),
-        failedCount(failedCount), totalTransferredMB(totalTransferredMB), totalFileSizeMB(totalFileSizeMB),
+/* Note: Inspired by Optimizer.h's PairState */
+    StreamerPairState(): epoch(0), finishedCount(0), activeCount(0), failedCount(0),
+        totalDuration(0), totalTransferredMB(0), totalFileSizeMB(0), totalFileSizeSquaredMB(0) {}
+    StreamerPairState(int epoch, int finishedCount, int activeCount, int failedCount,
+        uint64_t totalDuration, uint64_t totalTransferredMB, uint64_t totalFileSizeMB, uint64_t totalFileSizeSquaredMB):
+        epoch(epoch), finishedCount(finishedCount), activeCount(activeCount), failedCount(failedCount),
+        totalDuration(totalDuration), totalTransferredMB(totalTransferredMB), totalFileSizeMB(totalFileSizeMB),
         totalFileSizeSquaredMB(totalFileSizeSquaredMB) {}
+};
+
+class CyclicPerformanceBuffer {
+    /**
+     * @class CyclicPerformanceBuffer
+     * @brief Represents a cyclic performance buffer for streamer data.
+     *
+     * This class provides a cyclic performance buffer implementation for storing streamer data.
+     * It allows efficient insertion and retrieval of data in a cyclic manner.
+     */
+    static const uint64_t bucketWidth = 20; // width of time intervals for which statistics are bundled.
+    static const uint64_t baseTime = 0;
+
+    int numBuckets;
+    uint64_t epochSize;
+    // Pairs of <StreamerPairState, Epoch>
+
+protected:
+    uint64_t getIndex(uint64_t t) {
+        uint64_t epochTime = (t-baseTime)%(epochSize);
+        return epochTime/bucketWidth;
+    }
+    uint64_t getEpoch(uint64_t t) {
+        return (t-baseTime)/epochSize;
+    }
+
+public:
+    std::vector<std::pair<StreamerPairState*, int>> pairStateArray;
+
+    CyclicPerformanceBuffer(int nb): numBuckets(nb), epochSize(nb*bucketWidth) {
+        pairStateArray.resize(numBuckets); // Resize the vector to the specified number of buckets
+        for (int i = 0; i < numBuckets; i++) {
+            pairStateArray[i] = std::make_pair(new StreamerPairState(), 0); // Construct an empty StreamerPairState at each index
+        }
+    }
+
+    // For use by the Streamer Service (Southbound)
+    StreamerPairState* getStreamerState(uint64_t t) {
+        return pairStateArray[getIndex(t)].first;
+    }
+
+    // For use by the Streamer Data Source (Northbound)
+};
+
+struct StreamerFileState {
+    uint64_t lastTimestamp;
+    uint64_t lastTransferredBytes;
 };
 
 class StreamerDataSource: public OptimizerDataSource {
 public:
     //TODO: Need to make the following private
-    // std::stirng src, dst;
-    time_t t0;
+    static const uint64_t T = 17*1000; // Period of time in milliseconds.
+
+    uint64_t t0 = 0; // Timestamp in milliseconds after Epoch Time.
     std::map<Pair, StreamerPairState> m_sd;  
+    std::map<std::string, StreamerFileState> m_sdf; // Maps the concatenated src+dst+jobid+fileid to its State.
+    std::set<Pair> s_activePairs;
+    CyclicPerformanceBuffer cyclicPerfBuffer; // a cyclic buffer saving array of StreamerPairState
     int numPM;
 
 //public:

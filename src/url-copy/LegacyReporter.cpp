@@ -39,7 +39,18 @@ LegacyReporter::LegacyReporter(const UrlCopyOpts &opts): producer(opts.msgDir), 
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Connected to aggregator" << commit;
 }
 
+void LegacyReporter::sendAggMessage(const Transfer &transfer, std::string strType) {
+    std::string msg = serializeStreamerMessage(strType, transfer.source.host, transfer.destination.host,
+                                                transfer.jobId, transfer.fileId,
+                                                transfer.stats.process.start, transfer.transferredBytes, 
+                                                transfer.userFileSize, transfer.instantaneousThroughput);
+
+    zmq::message_t message(msg.c_str(), msg.size());
+    zmqAggSocket.send(message);
+}
+
 void LegacyReporter::sendAggMessage(const std::string &msg) {
+
     zmq::message_t message(msg.c_str(), msg.size());
     zmqAggSocket.send(message);
     // TODO: free message
@@ -113,10 +124,10 @@ void LegacyReporter::sendTransferStart(const Transfer &transfer, Gfal2TransferPa
     //                         + " " + started.job_id
     //                         + " " + std::to_string(started.file_id);
     // sendAggMessage(msg);
-    std::string msg = serializeStreamerMessage("TRANSFER_START", transfer.source.host, transfer.destination.host,
-                                                transfer.jobId, transfer.fileId,
-                                                transfer.stats.process.start, 0);
-    sendAggMessage(msg);
+    // std::string msg = serializeStreamerMessage("TRANSFER_START", transfer.source.host, transfer.destination.host,
+    //                                             transfer.jobId, transfer.fileId,
+    //                                             transfer.stats.process.start, 0, transfer.userFileSize);
+    sendAggMessage(transfer, "TRANSFER_START");
 }
 
 
@@ -376,10 +387,10 @@ void LegacyReporter::sendTransferCompleted(const Transfer &transfer, Gfal2Transf
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "Transfer complete message content: " << msgReturnValue << commit;
     }
 
-    std::string msg = serializeStreamerMessage("TRANSFER_COMPLETE", transfer.source.host, transfer.destination.host,
-                                                transfer.jobId, transfer.fileId,
-                                                transfer.stats.process.end, transfer.userFileSize);
-    sendAggMessage(msg);
+    // std::string msg = serializeStreamerMessage("TRANSFER_COMPLETE", transfer.source.host, transfer.destination.host,
+    //                                             transfer.jobId, transfer.fileId,
+    //                                             transfer.stats.process.end, transfer.userFileSize);
+    sendAggMessage(transfer, "TRANSFER_COMPLETE");
 }
 
 
@@ -433,31 +444,34 @@ void LegacyReporter::sendPing(Transfer &transfer)
 std::string LegacyReporter::serializeStreamerMessage(std::string eventType,
                                      std::string src, std::string dst,
                                      std::string jobId, uint64_t fileId,
-                                     uint64_t timestamp, uint64_t transferred
+                                     uint64_t timestamp, uint64_t transferred,
+                                     uint64_t userFileSize,
+                                     double instantaneousThroughput
                                      ) {
     return eventType + '\t'
          + src + '\t' + dst + '\t'
          + jobId + ':' + std::to_string(fileId) + '\t'
-         + std::to_string(timestamp) + '\t' + std::to_string(transferred);
+         + std::to_string(timestamp) + '\t' + std::to_string(transferred) + '\t' + std::to_string(userFileSize)
+         + '\t' + std::to_string(instantaneousThroughput);
 }
 
-void LegacyReporter::deserializeStreamerMessage(std::string msg,
-                                     std::string& eventType,
-                                     std::string& src, std::string& dst,
-                                     std::string& jobId, uint64_t& fileId,
-                                     uint64_t& timestamp, uint64_t& transferred
-                                     ) {
-    std::istringstream iss(msg);
-    std::string token;
-    std::getline(iss, eventType, '\t');
-    std::getline(iss, src, '\t');
-    std::getline(iss, dst, '\t');
-    std::getline(iss, token, '\t');
-    size_t colonPos = token.find(':');
-    jobId = token.substr(0, colonPos);
-    fileId = std::stoull(token.substr(colonPos + 1));
-    std::getline(iss, token, '\t');
-    timestamp = std::stoull(token);
-    std::getline(iss, token, '\t');
-    transferred = std::stoull(token);
-}
+// void LegacyReporter::deserializeStreamerMessage(std::string msg,
+//                                      std::string& eventType,
+//                                      std::string& src, std::string& dst,
+//                                      std::string& jobId, uint64_t& fileId,
+//                                      uint64_t& timestamp, uint64_t& transferred
+//                                      ) {
+//     std::istringstream iss(msg);
+//     std::string token;
+//     std::getline(iss, eventType, '\t');
+//     std::getline(iss, src, '\t');
+//     std::getline(iss, dst, '\t');
+//     std::getline(iss, token, '\t');
+//     size_t colonPos = token.find(':');
+//     jobId = token.substr(0, colonPos);
+//     fileId = std::stoull(token.substr(colonPos + 1));
+//     std::getline(iss, token, '\t');
+//     timestamp = std::stoull(token);
+//     std::getline(iss, token, '\t');
+//     transferred = std::stoull(token);
+// }
