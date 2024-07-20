@@ -137,7 +137,7 @@ public:
     uint64_t previousPingTransferredBytes;
 
     // DEV: Transfer Socket
-    Reporter* aggReporterPtr = nullptr;
+    Reporter* streamerReporterPointer = nullptr;
 
     // Log file
     std::string logFile;

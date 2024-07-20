@@ -13,7 +13,7 @@ class StreamerService: public BaseService
 {
 private:
     zmq::context_t zmqContext;
-    zmq::socket_t zmqAggSocket;
+    zmq::socket_t zmqStreamerSocket;
     const std::string host_name = "*";
     const int portnumber = 5555;
 

@@ -18,7 +18,7 @@
 #include <boost/algorithm/string.hpp>
 #include "common/Logger.h"
 #include "Transfer.h"
-#include "LegacyReporter.h"
+#include "StreamerReporter.h"
 
 using fts3::common::commit;
 
@@ -47,14 +47,9 @@ void performanceCallback(gfalt_transfer_status_t h, const char*, const char*, gp
         transfer->stats.elapsedAtPerf = elapsed * 1000;
 
         // Send the transfer start message to the aggregator
-        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Sending aggregation callback to the aggregator" << commit;
-        // std::string msg = "TRANSFER_CALLBACK_PM ";
-        LegacyReporter* aggLegReporter = (LegacyReporter*) transfer->aggReporterPtr;
-        // std::string msg = aggLegReporter->serializeStreamerMessage("TRANSFER_CALLBACK_PM", 
-        //                                         transfer->source.host, transfer->destination.host,
-        //                                         transfer->jobId, transfer->fileId,
-        //                                         millisecondsSinceEpoch(), transfer->transferredBytes);
-        aggLegReporter->sendAggMessage(*transfer, "TRANSFER_CALLBACK_PM");
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXD: Sending aggregation callback to the aggregator" << commit;
+        StreamerReporter* streamerReporter = (StreamerReporter*) transfer->streamerReporterPointer;
+        streamerReporter->sendStreamMessage(*transfer, "TRANSFER_CALLBACK_PM");
     }
 }
 

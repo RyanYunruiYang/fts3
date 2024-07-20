@@ -44,7 +44,7 @@ public:
     void sendPing(Transfer &t) {
         pingMsgs.push_back(t);
     }
-    void sendAggMessage(const std::string &) {
+    void sendStreamMessage(const std::string &) {
         // Do nothing
     }
 };

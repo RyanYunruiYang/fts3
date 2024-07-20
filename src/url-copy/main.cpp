@@ -20,7 +20,7 @@
 #include "LogHelper.h"
 #include "UrlCopyOpts.h"
 #include "UrlCopyProcess.h"
-#include "LegacyReporter.h"
+#include "StreamerReporter.h"
 
 #include <cstdlib>
 
@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
     setupLogging(opts.debugLevel);
 
     // Construct Url Copy Process
-    LegacyReporter reporter(opts);
+    StreamerReporter reporter(opts);
     UrlCopyProcess urlCopyProcess(opts, reporter);
 
     // Re-set signal handler to handle gracefully signals

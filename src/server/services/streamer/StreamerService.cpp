@@ -80,15 +80,75 @@ void deserializeStreamerMessage(std::string msg, StreamerPerfMarker& pm) {
 
 
 StreamerService::StreamerService(StreamerDataSource* s): BaseService("StreamerService"), zmqContext(1), 
-                                        zmqAggSocket(zmqContext, ZMQ_PULL), data(s)
+                                        zmqStreamerSocket(zmqContext, ZMQ_PULL), data(s)
 {
     std::string bind_address = "tcp://" + host_name + ":" + std::to_string(portnumber);
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << bind_address << fts3::common::commit;
     
-    zmqAggSocket.bind(bind_address);
+    zmqStreamerSocket.bind(bind_address);
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "bind successful" << fts3::common::commit;
 }
 
+
+void processTransferStart(const StreamerPerfMarker& pm, StreamerDataSource* data,
+                          const Pair& pair)
+{
+    // Update m_sd
+    --data->m_sd[pair].submittedCount;
+    ++data->m_sd[pair].activeCount;
+    data->s_activePairs.insert(pair);
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAA:" << pair << " start active count " 
+        << data->m_sd[pair].activeCount << fts3::common::commit; 
+
+    // Code for handling values with units involving Bytes
+    // Update m_sdf
+    data->m_sdf[pair][pm.fileId].lastTransferredBytes = pm.transferred;
+    data->m_sdf[pair][pm.fileId].lastTimestamp = pm.timestamp;
+
+    data->m_sds[pair].processNewTransfer(pm.timestamp, pm.userFileSize);   
+}
+
+void processTransferCallback(const StreamerPerfMarker& pm, StreamerDataSource* data,
+                             const Pair& pair)
+{
+    auto previousTransferred = data->m_sdf[pair][pm.fileId].lastTransferredBytes;
+    auto prevTimestamp = data->m_sdf[pair][pm.fileId].lastTimestamp;
+
+    uint64_t transferDelta = pm.transferred - previousTransferred;
+    uint64_t timeDelta = pm.timestamp - prevTimestamp;
+
+    // Code for handling values with units involving Bytes
+    data->pairToCyclicBuffer[pair].updateTransferred(prevTimestamp, pm.timestamp, transferDelta);
+
+
+    // Update m_sdf
+    data->m_sdf[pair][pm.fileId].lastTransferredBytes = pm.transferred;
+    data->m_sdf[pair][pm.fileId].lastTimestamp = pm.timestamp;
+
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAE: transferred: " << pm.transferred
+                                     << ", transferDelta: " << transferDelta
+                                     << ", out of " << pm.userFileSize 
+                                     << ", in " << timeDelta
+                                     << ", inst tput: " << pm.instantaneousThroughput << fts3::common::commit;
+}
+
+void processTransferComplete(const StreamerPerfMarker& pm, StreamerDataSource* data,
+                             const Pair& pair)
+{
+    if (--data->m_sd[pair].activeCount == 0) { // remove pair from activePairs
+        data->s_activePairs.erase(pair);
+    }
+    ++data->m_sd[pair].finishedCount;
+
+    // Code for handling values with units involving Bytes
+    data->pairToCyclicBuffer[pair].updateTransferred(data->m_sdf[pair][pm.fileId].lastTimestamp, pm.timestamp, pm.transferred - data->m_sdf[pair][pm.fileId].lastTransferredBytes);
+
+    // Clean up m_sdf
+    data->m_sdf[pair].erase(pm.fileId);
+                             
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAA:" << pair << " complete active count " 
+        << data->m_sd[pair].activeCount << fts3::common::commit; 
+}
 
 void StreamerService::runService()
 {
@@ -101,73 +161,34 @@ void StreamerService::runService()
         {
             // FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "Blocking until a message is received..." << fts3::common::commit;
             zmq::message_t message;
-            std::optional<unsigned long> rc = zmqAggSocket.recv(&message, ZMQ_NOBLOCK); // zmqAggSocket.recv(message, zmq::recv_flags::none);
+            int rc = zmqStreamerSocket.recv(&message);
             if (rc == -1) {
                 FTS3_COMMON_LOGGER_NEWLOG(ERR) << "DEV: Error receiving message" << fts3::common::commit;
             }
             if (rc > 0) {
                 std::string msg_str(static_cast<char*>(message.data()), message.size());
-                //std::string eventType, src, dst, jobId;
-                //uint64_t fileId, timestamp, transferred;
                 StreamerPerfMarker pm;
-                deserializeStreamerMessage(msg_str, pm); 
-                // deserializeStreamerMessage(msg_str, eventType, src, dst, 
-                //                                         jobId, fileId, timestamp, transferred);
+                deserializeStreamerMessage(msg_str, pm); // pm contains: eventType, src, dst, jobId, fileId, timestamp, transferred);
                 data->numPM++;
-                // FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: message " << data.numPM << " " << msg_str << fts3::common::commit;  
                 FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXX: message #" << counter << " contains:\n" << msg_str << fts3::common::commit; 
                 FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAB: parsed timestamp: " << pm.timestamp << fts3::common::commit; 
 
                 Pair pair = Pair(pm.src, pm.dst);
-                StreamerPairState* curEpochState = data->cyclicPerfBuffer.getStreamerState(pm.timestamp);
+                // StreamerFileState* fileState = data->m_sdf[pair][pm.fileId];
+                // StreamerPairState* curEpochState = data->pairToCyclicBuffer[pair].getStreamerState(pm.timestamp);
 
-                std::string uniqueIdentifier = pm.src+pm.dst+pm.jobId+std::to_string(pm.fileId);
                 uint64_t transferDelta, timeDelta;
                 switch (pm.eventType) {
                     case TRANSFER_START:
-                        
-                        { // 1. Handling FILE_STATE Attributes
-                            ++data->m_sd[pair].activeCount;
-                            data->s_activePairs.insert(pair);
-                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAA:" << pair << " start active count " 
-                                << data->m_sd[pair].activeCount << fts3::common::commit; 
-                        }
-                        { // 2. Code for handling values with units involving Bytes
-                            // Update m_sdf
-                            data->m_sdf[uniqueIdentifier].lastTransferredBytes = pm.transferred;
-                            data->m_sdf[uniqueIdentifier].lastTimestamp = pm.timestamp;
-
-                            curEpochState->totalFileSizeMB += pm.userFileSize; // add finished file size
-                            curEpochState->totalFileSizeSquaredMB += pm.userFileSize * pm.userFileSize;
-                        }
+                        processTransferStart(pm, data, pair);
                         break;
                     case TRANSFER_CALLBACK_PM:
-                        { // 2. Code for handling values with units involving Bytes.
-                            transferDelta = pm.transferred - data->m_sdf[uniqueIdentifier].lastTransferredBytes;
-                            timeDelta = pm.timestamp - data->m_sdf[uniqueIdentifier].lastTimestamp;
-
-                            // Update m_sdf
-                            data->m_sdf[uniqueIdentifier].lastTransferredBytes = pm.transferred;
-                            data->m_sdf[uniqueIdentifier].lastTimestamp = pm.timestamp;
-
-                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAE: transferred: " << pm.transferred
-                                                             << ", transferDelta: " << transferDelta
-                                                             << ", out of " << pm.userFileSize 
-                                                             << ", in " << timeDelta
-                                                             << ", inst tput: " << pm.instantaneousThroughput << fts3::common::commit;
+                        processTransferCallback(pm, data, pair);
                         break;
                     case TRANSFER_COMPLETE:
-                            if (--data->m_sd[pair].activeCount == 0) { // remove pair from activePairs
-                                data->s_activePairs.erase(pair);
-                            }
-                            ++data->m_sd[pair].finishedCount;
-                             
-                            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAA:" << pair << " complete active count " 
-                                << data->m_sd[pair].activeCount << fts3::common::commit; 
-                        }
+                        processTransferComplete(pm, data, pair);
                         break;
                     case UNDEFINED:
-                        // Code for other event types
                         FTS3_COMMON_LOGGER_NEWLOG(ERR) << "AAA: undefined eventType" << fts3::common::commit; 
                         break;
                     default:

@@ -88,17 +88,33 @@ public:
     virtual ~OptimizerDataSource()
     {}
 
-    // Return a list of pairs with active or submitted transfers
-    virtual std::list<Pair> getActivePairs(void) = 0;
-
+    /* 
+     * Configurations 
+     */
     // Return the optimizer configuration value
     virtual OptimizerMode getOptimizerMode(const std::string &source, const std::string &dest) = 0;
-
+    
     // Get configured limits
     virtual void getPairLimits(const Pair &pair, Range *range, StorageLimits *limits) = 0;
 
+
+    /*
+     * Optimizer Input. At query time.
+     */
+
+    // Return a list of pairs with active or submitted transfers
+    virtual std::list<Pair> getActivePairs(void) = 0;
+
+    // Get the number of transfers in the given state
+    virtual int getActive(const Pair&) = 0;
+    virtual int getSubmitted(const Pair&) = 0;
+
     // Get the stored optimizer value (current value)
     virtual int getOptimizerValue(const Pair&) = 0;
+
+    /*
+     * Optimizer Input. Rolling time from query time to query time - interval.
+     */
 
     // Get the weighted throughput for the pair
     virtual void getThroughputInfo(const Pair &, const boost::posix_time::time_duration &,
@@ -109,17 +125,19 @@ public:
     // Get the success rate for the pair
     virtual double getSuccessRateForPair(const Pair&, const boost::posix_time::time_duration&, int *retryCount) = 0;
 
-    // Get the number of transfers in the given state
-    virtual int getActive(const Pair&) = 0;
-    virtual int getSubmitted(const Pair&) = 0;
-
-    // Get current throughput
+    // Get current throughput by aggregating reported instantaneous tput from the database.
     virtual double getThroughputAsSource(const std::string&) = 0;
     virtual double getThroughputAsDestination(const std::string&) = 0;
+    
+    // TODO: Add fixed interval design.
+
+    /* 
+     * Optimizer Output 
+     */
 
     // Permanently register the optimizer decision
     virtual void storeOptimizerDecision(const Pair &pair, int activeDecision,
-        const PairState &newState, int diff, const std::string &rationale) = 0;
+                const PairState &newState, int diff, const std::string &rationale) = 0;
 
     // Permanently register the number of streams per active
     virtual void storeOptimizerStreams(const Pair &pair, int streams) = 0;

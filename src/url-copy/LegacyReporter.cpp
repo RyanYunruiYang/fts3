@@ -25,36 +25,19 @@ using fts3::common::commit;
 
 LegacyReporter::LegacyReporter(const UrlCopyOpts &opts): producer(opts.msgDir), opts(opts),
     zmqContext(1),
-    zmqPingSocket(zmqContext, ZMQ_PUB),
-    zmqAggSocket(zmqContext, ZMQ_PUSH)
+    zmqPingSocket(zmqContext, ZMQ_PUB)
 {
     std::string address = std::string("ipc://") + opts.msgDir + "/url_copy-ping.ipc";
     zmqPingSocket.connect(address.c_str());
 
-    std::string hostName = "127.0.0.1"; // formerly aggregator-test
-    std::string port = "5555";
-    std::string aggAddress = std::string("tcp://") + hostName + ":" + port;
-    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Connecting to aggregator at " << aggAddress << commit;
-    zmqAggSocket.connect(aggAddress.c_str());
-    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Connected to aggregator" << commit;
+    // std::string hostName = "127.0.0.1"; // formerly aggregator-test
+    // std::string port = "5555";
+    // std::string streamerAddress = std::string("tcp://") + hostName + ":" + port;
+    // FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Connecting to aggregator at " << streamerAddress << commit;
+    // zmqStreamerSocket.connect(streamerAddress.c_str());
+    // FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Connected to aggregator" << commit;
 }
 
-void LegacyReporter::sendAggMessage(const Transfer &transfer, std::string strType) {
-    std::string msg = serializeStreamerMessage(strType, transfer.source.host, transfer.destination.host,
-                                                transfer.jobId, transfer.fileId,
-                                                transfer.stats.process.start, transfer.transferredBytes, 
-                                                transfer.userFileSize, transfer.instantaneousThroughput);
-
-    zmq::message_t message(msg.c_str(), msg.size());
-    zmqAggSocket.send(message);
-}
-
-void LegacyReporter::sendAggMessage(const std::string &msg) {
-
-    zmq::message_t message(msg.c_str(), msg.size());
-    zmqAggSocket.send(message);
-    // TODO: free message
-}
 
 
 void LegacyReporter::sendTransferStart(const Transfer &transfer, Gfal2TransferParams&)
@@ -118,16 +101,16 @@ void LegacyReporter::sendTransferStart(const Transfer &transfer, Gfal2TransferPa
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "Transfer start message content: " << msgReturnValue << commit;
     }
 
-    // Send the transfer start message to the aggregator
-    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Sending aggregation message to the aggregator" << commit;
-    // std::string msg = "TRANSFER_START " + started.transfer_id
-    //                         + " " + started.job_id
-    //                         + " " + std::to_string(started.file_id);
-    // sendAggMessage(msg);
-    // std::string msg = serializeStreamerMessage("TRANSFER_START", transfer.source.host, transfer.destination.host,
-    //                                             transfer.jobId, transfer.fileId,
-    //                                             transfer.stats.process.start, 0, transfer.userFileSize);
-    sendAggMessage(transfer, "TRANSFER_START");
+    // // Send the transfer start message to the aggregator
+    // FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "DEV: Sending aggregation message to the aggregator" << commit;
+    // // std::string msg = "TRANSFER_START " + started.transfer_id
+    // //                         + " " + started.job_id
+    // //                         + " " + std::to_string(started.file_id);
+    // // sendStreamMessage(msg);
+    // // std::string msg = serializeStreamerMessage("TRANSFER_START", transfer.source.host, transfer.destination.host,
+    // //                                             transfer.jobId, transfer.fileId,
+    // //                                             transfer.stats.process.start, 0, transfer.userFileSize);
+    // sendStreamMessage(transfer, "TRANSFER_START");
 }
 
 
@@ -387,10 +370,10 @@ void LegacyReporter::sendTransferCompleted(const Transfer &transfer, Gfal2Transf
         FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "Transfer complete message content: " << msgReturnValue << commit;
     }
 
-    // std::string msg = serializeStreamerMessage("TRANSFER_COMPLETE", transfer.source.host, transfer.destination.host,
-    //                                             transfer.jobId, transfer.fileId,
-    //                                             transfer.stats.process.end, transfer.userFileSize);
-    sendAggMessage(transfer, "TRANSFER_COMPLETE");
+    // // std::string msg = serializeStreamerMessage("TRANSFER_COMPLETE", transfer.source.host, transfer.destination.host,
+    // //                                             transfer.jobId, transfer.fileId,
+    // //                                             transfer.stats.process.end, transfer.userFileSize);
+    // sendStreamMessage(transfer, "TRANSFER_COMPLETE");
 }
 
 
@@ -439,20 +422,6 @@ void LegacyReporter::sendPing(Transfer &transfer)
         FTS3_COMMON_LOGGER_NEWLOG(ERR) << "Failed to send heartbeat: " << error.what() << commit;
     }
     transfer.previousPingTransferredBytes = transfer.transferredBytes;
-}
-
-std::string LegacyReporter::serializeStreamerMessage(std::string eventType,
-                                     std::string src, std::string dst,
-                                     std::string jobId, uint64_t fileId,
-                                     uint64_t timestamp, uint64_t transferred,
-                                     uint64_t userFileSize,
-                                     double instantaneousThroughput
-                                     ) {
-    return eventType + '\t'
-         + src + '\t' + dst + '\t'
-         + jobId + ':' + std::to_string(fileId) + '\t'
-         + std::to_string(timestamp) + '\t' + std::to_string(transferred) + '\t' + std::to_string(userFileSize)
-         + '\t' + std::to_string(instantaneousThroughput);
 }
 
 // void LegacyReporter::deserializeStreamerMessage(std::string msg,

@@ -22,32 +22,16 @@
 
 /// Implements reporter using MsgBus
 class LegacyReporter: public Reporter {
-private:
+protected:
     Producer producer;
     UrlCopyOpts opts;
     zmq::context_t zmqContext;
     zmq::socket_t zmqPingSocket;
-    zmq::socket_t zmqAggSocket;
+    // zmq::socket_t zmqStreamerSocket;
 
 
 public:
     LegacyReporter(const UrlCopyOpts &opts);
-
-    virtual void sendAggMessage(const std::string &msg);
-    virtual void sendAggMessage(const Transfer &transfer, std::string strType);
-
-    virtual std::string serializeStreamerMessage(std::string eventType,
-                                     std::string src, std::string dst,
-                                     std::string jobId, uint64_t fileId,
-                                     uint64_t timestamp, uint64_t transferred, 
-                                     uint64_t filesize, double throughput
-                                     );
-    static void deserializeStreamerMessage(std::string msg,
-                                     std::string& eventType,
-                                     std::string& src, std::string& dst,
-                                     std::string& jobId, uint64_t& fileId,
-                                     uint64_t& timestamp, uint64_t& transferred
-                                     );                            
 
     virtual void sendTransferStart(const Transfer&, Gfal2TransferParams&);
 

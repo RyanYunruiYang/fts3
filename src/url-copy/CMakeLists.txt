@@ -33,6 +33,7 @@ add_library(fts_url_copy_lib SHARED
     LogHelper.cpp
     heuristics.cpp
     LegacyReporter.cpp
+    StreamerReporter.cpp
     Transfer.cpp
     UrlCopyOpts.cpp
     UrlCopyProcess.cpp

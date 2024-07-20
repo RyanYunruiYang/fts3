@@ -48,6 +48,10 @@ int IntegratedOptimizerDataSource::getOptimizerValue(const Pair& pair) {
 void IntegratedOptimizerDataSource::getThroughputInfo(const Pair &pair, const boost::posix_time::time_duration &interval,
     double *throughput, double *filesizeAvg, double *filesizeStdDev) {
     streamData->getThroughputInfo(pair, interval, throughput, filesizeAvg, filesizeStdDev);
+    FTS3_COMMON_LOGGER_NEWLOG(INFO) << "XXC: Throughput: " << *throughput << commit;
+    FTS3_COMMON_LOGGER_NEWLOG(INFO) << "XXC: Average File Size: " << *filesizeAvg << commit;
+    FTS3_COMMON_LOGGER_NEWLOG(INFO) << "XXC: File Size Standard Deviation: " << *filesizeStdDev << commit;
+
     return mySqlData->getThroughputInfo(pair, interval, throughput, filesizeAvg, filesizeStdDev);
 }
 
