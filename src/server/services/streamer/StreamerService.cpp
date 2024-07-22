@@ -104,7 +104,7 @@ void processTransferStart(const StreamerPerfMarker& pm, StreamerDataSource* data
     // Update m_sdf
     data->m_sdf[pair][pm.fileId].lastTransferredBytes = pm.transferred;
     data->m_sdf[pair][pm.fileId].lastTimestamp = pm.timestamp;
-
+    
     data->m_sds[pair].processNewTransfer(pm.timestamp, pm.userFileSize);   
 }
 

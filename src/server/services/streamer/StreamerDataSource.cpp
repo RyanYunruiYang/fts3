@@ -46,13 +46,17 @@ void StreamerDataSource::getThroughputInfo(const Pair &pair, const boost::posix_
     // }
 
     CyclicPerformanceBuffer &cpb = pairToCyclicBuffer[pair];
-    cpb.getPairThroughputInfo(interval, throughput);
-    m_sds[pair].getPairFileSizeInfo(100, filesizeAvg, filesizeStdDev);
+    cpb.getPairThroughputInfo(interval, throughput);  // read throughput for the interval 
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXG. filesizeavg, filesizestddev: " << *filesizeAvg << " " << *filesizeStdDev << commit;
+    m_sds[pair].getPairFileSizeInfo(1000, filesizeAvg, filesizeStdDev);
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXE. filesizeavg, filesizestddev: " << *filesizeAvg << " " << *filesizeStdDev << commit;
+
     // m_sds[pair].getPairFileSizeInfo(static_cast<uint64_t>(interval.total_microseconds()), filesizeAvg, filesizeStdDev);
 }
 
 time_t StreamerDataSource::getAverageDuration(const Pair &pair, const boost::posix_time::time_duration &interval) {
-    return m_sds[pair].getAvgDuration();
+    //return m_sds[pair].getAvgDuration();
+    return 0;
 }
 
 // Get the success rate for the pair

@@ -24,6 +24,7 @@ enum EventType {
     UNDEFINED
 };
 
+// Used for sending performance markers.
 struct StreamerPerfMarker {
     EventType eventType;
     std::string src;
@@ -36,6 +37,7 @@ struct StreamerPerfMarker {
     double instantaneousThroughput; // for cross reference purpose
 };
 
+// Used in m_sd.
 struct StreamerPairState {
     int submittedCount;
     int activeCount;
@@ -47,23 +49,24 @@ struct StreamerPairState {
         submittedCount(submittedCount), activeCount(activeCount), finishedCount(finishedCount), failedCount(failedCount) {}
 };
 
-struct StreamerTransientStateEpoch {
+// Used in m_sds.
+struct PerformanceInterval {
     uint64_t epoch;
-    uint64_t totalTransferredMB;
+    double   totalTransferredMB;
 
-    StreamerTransientStateEpoch(): epoch(0), totalTransferredMB(0) {}
-    StreamerTransientStateEpoch(int epoch, uint64_t totalTransferredMB):
+    PerformanceInterval(): epoch(0), totalTransferredMB(0) {}
+    PerformanceInterval(int epoch, double totalTransferredMB):
         epoch(epoch), totalTransferredMB(totalTransferredMB) {}
 };
 
 
-struct StreamerTransientStateStats {
-    uint64_t totalDuration;  // in seconds
-    uint64_t totalFileSizeMB;
-    uint64_t totalFileSizeSquaredMB;
-    std::deque<std::pair<uint64_t, uint64_t>> fileTransfers; // (fileSize, timestamp)
-    uint64_t interval; // interval in seconds
-    uint64_t maxInterval; // max interval in seconds
+struct StreamerTransientStateStats { //keep recent history for a (src,dst) pair
+    std::deque<std::pair<uint64_t, uint64_t>> fileTransfers; // history data (starttime, fileSize)
+    uint64_t totalDuration;   // stat data for fileTransfers, valid period [start,end] is hidden in fileTransfers
+    uint64_t totalFileSizeMB; // stat data for fileTransfers
+    uint64_t totalFileSizeSquaredMB; // stat data for fileTransfers
+    uint64_t interval;        // default query interval, in seconds
+    uint64_t maxInterval;     // in seconds, purge period
 
     StreamerTransientStateStats()
         : totalDuration(0), totalFileSizeMB(0), totalFileSizeSquaredMB(0), interval(100), maxInterval(100) {}
@@ -72,20 +75,25 @@ struct StreamerTransientStateStats {
         : totalDuration(0), totalFileSizeMB(0), totalFileSizeSquaredMB(0), interval(interval), maxInterval(maxInterval) {}
 
 
-    void processNewTransfer(uint64_t fileSize, uint64_t timestamp) {
-        fileTransfers.emplace_back(fileSize, timestamp);
-        totalFileSizeMB += fileSize / (1024 * 1024);
+    //timestamp is starttime, fileSize in bytes
+    void processNewTransfer(uint64_t timestamp, uint64_t fileSize) {
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXF Arguments (timestamp, fileSize) = " << timestamp << " " << fileSize << fts3::common::commit;
+        fileTransfers.emplace_back(timestamp, fileSize);
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXF. fileTransfers Current List of size " << fileTransfers.size() << fts3::common::commit;
+        for (const auto& x : fileTransfers) {
+            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << x.first << " " << x.second << fts3::common::commit;
+        }
+
+        totalFileSizeMB        += fileSize / (1024 * 1024);
         totalFileSizeSquaredMB += (fileSize / (1024 * 1024)) * (fileSize / (1024 * 1024));
-        purgeOldTransfers(timestamp);
+        // purgeOldTransfers();
     }
 
-    void incrementTotalDuration(uint64_t duration) {
-        totalDuration += duration;
-    }
-
+    /*
     double getAvgDuration() const {
-        uint64_t currentTime = fileTransfers.empty() ? 0 : fileTransfers.back().second;
-        uint64_t validStartTime = currentTime > interval ? currentTime - interval : 0;
+        boost::posix_time::ptime curTime        = boost::posix_time::microsec_clock::universal_time();
+        boost::posix_time::ptime validStartTime = curTime - interval;
+
         uint64_t durationSum = 0;
         int count = 0;
 
@@ -96,24 +104,31 @@ struct StreamerTransientStateStats {
             }
         }
         return count > 0 ? static_cast<double>(durationSum) / count : 0.0;
-    }
+    }*/
 
+    // get average file size during [currTime-interval, currTime]
     void getPairFileSizeInfo(uint64_t interval, double* avg, double* stdDev) const {
-        uint64_t currentTime = fileTransfers.empty() ? 0 : fileTransfers.back().second;
-        uint64_t validStartTime = currentTime > interval ? currentTime - interval : 0;
-        uint64_t validTotalFileSizeMB = 0;
+        std::time_t curTime     = std::time(nullptr);
+        uint64_t validStartTime = (uint64_t)curTime - interval;
+
+        uint64_t validTotalFileSizeMB        = 0;
         uint64_t validTotalFileSizeSquaredMB = 0;
         int count = 0;
 
+        FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXG. getPairFileSizeInfo Called " << fileTransfers.size() << fts3::common::commit;
+
         for (const auto& transfer : fileTransfers) {
-            if (transfer.second >= validStartTime) {
-                uint64_t fileSizeMB = transfer.first / (1024 * 1024);
+            FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXE. Transfer: " << transfer.first << "," << transfer.second << fts3::common::commit;
+            if (transfer.first >= validStartTime) { // transfer type (fileSizeInBytes, startTime)
+                uint64_t fileSizeMB   = transfer.second / (1024 * 1024);
                 validTotalFileSizeMB += fileSizeMB;
                 validTotalFileSizeSquaredMB += fileSizeMB * fileSizeMB;
                 count++;
+                FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXE. File size: " << fileSizeMB << " MB" << fts3::common::commit;
+                FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXE. Valid total file size: " << validTotalFileSizeMB << " MB" << fts3::common::commit;
             }
         }
-
+        
         if (count == 0) {
             *avg = 0.0;
             *stdDev = 0.0;
@@ -127,10 +142,11 @@ struct StreamerTransientStateStats {
     }
 
 private:
-    void purgeOldTransfers(uint64_t currentTime) {
-        while (!fileTransfers.empty() && currentTime - fileTransfers.front().second > maxInterval) {
-            auto [oldFileSize, oldTimestamp] = fileTransfers.front();
-            totalFileSizeMB -= oldFileSize / (1024 * 1024);
+    void purgeOldTransfers() {
+        uint64_t currentTime     = (uint64_t)std::time(nullptr);
+        while (!fileTransfers.empty() && currentTime - fileTransfers.front().first > maxInterval) {
+            auto [oldTimestamp, oldFileSize] = fileTransfers.front();
+            totalFileSizeMB        -= oldFileSize  / (1024 * 1024);
             totalFileSizeSquaredMB -= (oldFileSize / (1024 * 1024)) * (oldFileSize / (1024 * 1024));
             fileTransfers.pop_front();
         }
@@ -151,23 +167,23 @@ class CyclicPerformanceBuffer {
     int numBuckets;
     uint64_t epochSize;
 public:
-    std::vector<std::shared_ptr<StreamerTransientStateEpoch>> pairStateArray;
+    std::vector<std::shared_ptr<PerformanceInterval>> pairStateArray;
 
     CyclicPerformanceBuffer(): CyclicPerformanceBuffer(10) {}
     CyclicPerformanceBuffer(int nb): numBuckets(nb), epochSize(nb*bucketWidth) {
         pairStateArray.resize(numBuckets); // Resize the vector to the specified number of buckets
         for (int i = 0; i < numBuckets; i++) {
-            // Construct a shared_ptr to a StreamerTransientStateEpoch at each index
-            pairStateArray[i] = std::make_shared<StreamerTransientStateEpoch>();
+            // Construct a shared_ptr to a PerformanceInterval at each index
+            pairStateArray[i] = std::make_shared<PerformanceInterval>();
         }
     }
 
     // For use by the Streamer Service (Southbound)
     // Note: It is the job of the user to write in a new epoch.
-    std::shared_ptr<StreamerTransientStateEpoch> getStreamerState(uint64_t t) {
+    std::shared_ptr<PerformanceInterval> getStreamerState(uint64_t t) {
         uint64_t currentEpoch = getEpoch(t);
         if (currentEpoch != pairStateArray[getIndex(t)]->epoch) {
-            pairStateArray[getIndex(t)] = std::make_shared<StreamerTransientStateEpoch>(); // Create a new shared_ptr to a StreamerTransientState at the current index
+            pairStateArray[getIndex(t)] = std::make_shared<PerformanceInterval>(); // Create a new shared_ptr to a StreamerTransientState at the current index
         }
         return pairStateArray[getIndex(t)];
     }
@@ -201,11 +217,11 @@ public:
         uint64_t curIndex = getIndex(curTimeMillis);
 
         // Compute the total transferred in range [curTime - interval, curTime].
-        uint64_t totalTransferred = 0;
+        double totalTransferred = 0.0;
         for (uint64_t i = startIndex; i != curIndex; i = (i + 1) % numBuckets) {
             if (i==startIndex || i==curIndex) {
                 uint64_t timeInInterval = std::min((i + 1) * bucketWidth, curTimeMillis) - std::max(i * bucketWidth, startTimeMillis);
-                totalTransferred += pairStateArray[i]->totalTransferredMB * timeInInterval / bucketWidth;
+                totalTransferred += pairStateArray[i]->totalTransferredMB * static_cast<double>(timeInInterval) / static_cast<double>(bucketWidth);
             } else {
                 totalTransferred += pairStateArray[i]->totalTransferredMB;
             }
@@ -215,7 +231,7 @@ public:
         // TODO: Implement the computation
 
         // Compute the throughput
-        *throughput = static_cast<double>(totalTransferred) / interval.total_seconds();
+        *throughput = totalTransferred / interval.total_seconds();
     }
 
     double getPairThroughputInfo() {
@@ -249,9 +265,9 @@ public:
     static const uint64_t T = 17*1000; // Period of time in milliseconds.
 
     uint64_t t0 = 0; // Timestamp in milliseconds after Epoch Time.
-    std::map<Pair, StreamerPairState> m_sd;
-    std::map<Pair, StreamerTransientStateStats> m_sds;
-    std::map<Pair, CyclicPerformanceBuffer> pairToCyclicBuffer; // a cyclic buffer saving array of StreamerPairState
+    std::map<Pair, StreamerPairState> m_sd;  // stat from the service start time (no expiration), answer query getActive, getSubmitted
+    std::map<Pair, StreamerTransientStateStats> m_sds; //transient stat for last k intervals, answer query getThroughputInfo (filesize statistics), getAverageDuration
+    std::map<Pair, CyclicPerformanceBuffer> pairToCyclicBuffer; // a cyclic buffer saving array of PerformanceInterval
     std::map<Pair, std::map<uint64_t, StreamerFileState>> m_sdf; // Maps the concatenated src+dst+jobid+fileid to its State.
     std::set<Pair> s_activePairs;
     int numPM;
