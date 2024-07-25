@@ -1,0 +1,307 @@
+#pragma once
+#ifndef StreamerDataSource_H_ // Updated ifndef directive
+#define StreamerDataSource_H_ // Updated define directive
+
+#include <map>
+#include <set> //TODO: move to unordered_set
+#include <unordered_map>
+#include <vector>
+#include "../BaseService.h"
+#include "server/services/optimizer/Optimizer.h"
+
+using namespace fts3::optimizer;
+using namespace fts3::server;
+
+class StreamerService;
+
+enum EventType {
+    TRANSFER_START,
+    TRANSFER_CALLBACK_PM,
+    TRANSFER_COMPLETE,
+    UNDEFINED
+};
+
+// Used for messages only (sending performance markers over ZMQ).
+struct StreamerPerfMarker {
+    EventType eventType;
+    std::string src;
+    std::string dst;
+    std::string jobId;
+    uint64_t fileId;
+    uint64_t timestamp;
+    uint64_t transferred; // in bytes
+    uint64_t userFileSize; // in bytes?
+    double instantaneousThroughput; // for cross reference purpose
+};
+
+// Ownership Model: Corresponds to one (src, dst, fileid) tuple.
+struct StreamerFileState {
+    uint64_t fileId;
+    uint64_t fileSize;
+    uint64_t startTime;
+    uint64_t lastTimestamp;
+    uint64_t transferredBytes;
+    uint64_t fileDuration;
+
+    double instThroughput;
+
+    StreamerFileState() : fileId(0), fileSize(0), lastTimestamp(0), lastTransferredBytes(0), fileDuration(0), instThroughput(0.0) {}
+
+    StreamerFileState(uint64_t fileID, uint64_t fileSize, uint64_t lastTimestamp, uint64_t lastTransferredBytes, uint64_t fileDuration, double instThroughput)
+        : fileId(fileID), fileSize(fileSize), lastTimestamp(lastTimestamp), lastTransferredBytes(lastTransferredBytes), fileDuration(fileDuration), instThroughput(instThroughput) {}
+
+    StreamerFileState(const StreamerPerfMarker &pm)
+        : fileId(pm.fileId), fileSize(pm.userFileSize), startTime(pm.timestamp), lastTimestamp(pm.timestamp), transferredBytes(pm.transferred), fileDuration(0), instThroughput(0.0) {
+    }
+
+    StreamerFileState(const StreamerFileState &orig)
+        : fileId(orig.fileId), fileSize(orig.fileSize), startTime(orig.startTime),
+          lastTimestamp(orig.lastTimestamp), transferredBytes(orig.transferredBytes),
+          fileDuration(orig.fileDuration), instThroughput(orig.instThroughput) {}
+
+    void update(const StreamerPerfMarker &pm) {
+        lastTimestamp = pm.timestamp;
+        transferredBytes = pm.transferred;
+    }
+};
+
+
+// Used in m_sds.
+struct PerformanceInterval {
+    uint64_t epoch;
+    uint64_t updateTimeStamp;
+
+    // stat for the interval
+    //int submittedCount;
+    int activeCount;
+    int finishedCount;
+    //int failedCount;
+    uint64_t totalDuration;   // stat data for fileTransfers, valid period [start,end] is hidden in fileTransfers
+    uint64_t totalFileSizeMB; // stat data for fileTransfers
+    uint64_t totalFileSizeSquaredMB; // stat data for fileTransfers
+    //double   totalTransferredMB; // from start of Streaming service
+
+    // records, may be replaced later by only keeping streaming stats such as totalTransferredMG
+    std::map<uint64_t, std::shared_ptr<StreamerFileState>> activeFiles;
+    std::map<uint64_t, std::shared_ptr<StreamerFileState>> finishFiles;
+
+    PerformanceInterval(): epoch(0), updateTimeStamp(0),totalDuration(0), totalFileSizeMB(0), totalFileSizeSquaredMB(0) {}
+    PerformanceInterval(int epoch, double totalTransferredMB):
+        epoch(epoch), totalTransferredMB(totalTransferredMB) {}
+
+    PerformanceInterval(PerformanceInterval &orig)
+        : epoch(orig.epoch), updateTimeStamp(orig.updateTimeStamp), activeCount(orig.activeCount),
+          finishedCount(orig.finishedCount), totalDuration(orig.totalDuration),
+          totalFileSizeMB(orig.totalFileSizeMB), totalFileSizeSquaredMB(orig.totalFileSizeSquaredMB),
+          activeFiles(orig.activeFiles), finishFiles(orig.finishFiles) {
+        for (auto& file : activeFiles) {
+            file.second = std::make_shared<StreamerFileState>(StreamerFileState(*file.second));
+        }
+        for (auto& file : finishFiles) {
+            file.second = std::make_shared<StreamerFileState>(StreamerFileState(*file.second));
+        }
+    }
+
+    void processNewTransfer(const StreamerPerfMarker &pm) {
+        updateTimeStamp = pm.timestamp;
+        // update stat info
+        activeCount += 1;
+        finishedCount += 1;
+        // update records
+        // move from activeFiles to finishFiles
+        auto it = activeFiles.find(pm.fileId);
+        if (it != activeFiles.end()) {
+            finishFiles.insert(std::move(*it));
+            activeFiles.erase(it);
+            finishFiles[pm.fileId].fileDuration = pm.timestamp - finishFiles[pm.fileId].startTime; 
+        }
+
+        // TODO: add state to deal with state ARCHIVING
+    }
+    
+    void processPerformanceMarker(const StreamerPerfMarker& pm, CyclicPerformanceBuffer& cpb)
+    {
+        updateTimeStamp = pm.timestamp;
+
+        // update stat info
+        //transferredBytes = pm.transferred;
+        
+        // update records 
+        update(pm);
+    }
+                             
+    void processComplete(const StreamerPerfMarker &pm) {
+        updateTimeStamp = pm.timestamp;
+
+        // update stat info
+        activeCount -= 1;
+        finishedCount += 1;
+
+        // update records
+        // move from activeFiles to finishedFiles
+        auto it = activeFiles.find(pm.fileId);
+        if (it != activeFiles.end()) {
+            finishFiles.insert(std::move(*it));
+            activeFiles.erase(it);
+            finishFiles[pm.fileId].fileDuration = pm.timestamp - finishFiles[pm.fileId].startTime; 
+        }
+
+        // TODO: add state to deal with state ARCHIVING
+    }
+
+};
+
+class CyclicPerformanceBuffer {
+    /**
+     * @class CyclicPerformanceBuffer
+     * @brief Represents a cyclic performance buffer for streamer data.
+     *
+     * This class provides a cyclic performance buffer implementation for storing streamer data.
+     * It allows efficient insertion and retrieval of data in a cyclic manner.
+     */
+    static const uint64_t bucketWidth = 20; // width of time intervals for which statistics are bundled.
+    static const uint64_t baseTime = 0;
+
+    int numBuckets;
+    uint64_t epochSize;
+    std::vector<std::shared_ptr<PerformanceInterval>> pairStateArray;
+public:
+
+    CyclicPerformanceBuffer(): CyclicPerformanceBuffer(10) {}
+    CyclicPerformanceBuffer(int nb): numBuckets(nb), epochSize(nb*bucketWidth) {
+        pairStateArray.resize(numBuckets); // Resize the vector to the specified number of buckets
+        for (int i = 0; i < numBuckets; i++) {
+            // Construct a shared_ptr to a PerformanceInterval at each index
+            pairStateArray[i] = std::make_shared<PerformanceInterval>();
+        }
+    }
+
+    std::shared_ptr<PerformanceInterval>& operator[](uint64_t t) {
+        uint64_t currentEpoch = getEpoch(t);
+        if (currentEpoch > pairStateArray[getIndex(t)]->epoch) {
+            pairStateArray[getIndex(t)] = std::make_shared<PerformanceInterval>(); // Create a new shared_ptr to a PerformanceInterval at the current index
+        }
+        return pairStateArray[getIndex(t)];
+    }
+
+    void updateTransferred(uint64_t t1, uint64_t t2, uint64_t deltaTransferred) {
+        /* Update the total transferred bytes in the epochs in the range [t1, t2]
+         * Steps
+            * 1. Get the indices corresponding to t1 and t2
+            * 2. For each index-interval from index1 to index2, increment the totalTransferredMB by:
+            *   deltaTransferred * (time spent in index-interval) / (t2-t1)
+         */
+        uint64_t index1 = getIndex(t1);
+        uint64_t index2 = getIndex(t2);
+
+        for (uint64_t i = index1; i != index2; i = (i+1)%numBuckets) {
+            uint64_t timeInInterval = std::min((i+1)*bucketWidth, t2) - std::max(i*bucketWidth, t1);
+            pairStateArray[i]->totalTransferredMB += deltaTransferred * timeInInterval / (t2-t1);
+        }
+    }
+
+    // For use by the Streamer Data Source (Northbound)
+    void getPairThroughputInfo(const boost::posix_time::time_duration &interval, double *throughput) {
+        // Compute the start and end time of the interval
+        // TODO: Support generic [startime, endtime] (currently endtime = curtime always)
+        // TODO: Handle when interval > epochSize (when data has been thrown out, change denominator)
+        boost::posix_time::ptime curTime = boost::posix_time::microsec_clock::universal_time();
+        boost::posix_time::ptime startTime = curTime - interval;
+        uint64_t curTimeMillis = (curTime - boost::posix_time::from_time_t(0)).total_milliseconds();
+        uint64_t startTimeMillis = (startTime - boost::posix_time::from_time_t(0)).total_milliseconds();
+        uint64_t startIndex = getIndex(startTimeMillis);
+        uint64_t curIndex = getIndex(curTimeMillis);
+
+        // Compute the total transferred in range [curTime - interval, curTime].
+        double totalTransferred = 0.0;
+        for (uint64_t i = startIndex; i != curIndex; i = (i + 1) % numBuckets) {
+            if (i==startIndex || i==curIndex) {
+                uint64_t timeInInterval = std::min((i + 1) * bucketWidth, curTimeMillis) - std::max(i * bucketWidth, startTimeMillis);
+                totalTransferred += pairStateArray[i]->totalTransferredMB * static_cast<double>(timeInInterval) / static_cast<double>(bucketWidth);
+            } else {
+                totalTransferred += pairStateArray[i]->totalTransferredMB;
+            }
+        }
+
+        // Compute the average file size and standard deviation
+        // TODO: Implement the computation
+
+        // Compute the throughput
+        *throughput = totalTransferred / interval.total_seconds();
+    }
+
+    double getPairThroughputInfo() {
+        // Set default interval to 1 minute
+        boost::posix_time::time_duration interval = boost::posix_time::minutes(1);
+        double throughput;
+        getPairThroughputInfo(interval, &throughput);
+        return throughput;
+    }
+
+protected:
+    uint64_t getIndex(uint64_t t) {
+        uint64_t epochTime = (t-baseTime)%(epochSize);
+        return epochTime/bucketWidth;
+    }
+    uint64_t getEpoch(uint64_t t) {
+        return (t-baseTime)/epochSize;
+    }
+
+};
+
+
+class StreamerDataSource: public OptimizerDataSource {
+public:
+    static const uint64_t T = 17*1000; // Period of time in milliseconds.
+
+    uint64_t t0 = 0; // Timestamp in milliseconds after Epoch Time.
+    // std::map<Pair, StreamerPairState> m_sd;  // stat from the service start time (no expiration), answer query getActive, getSubmitted
+    // std::map<Pair, StreamerTransientStateStats> m_sds; //transient stat for last k intervals, answer query getThroughputInfo (filesize statistics), getAverageDuration
+    std::map<Pair, CyclicPerformanceBuffer> pairToCyclicBuffer; // a cyclic buffer saving array of PerformanceInterval
+    //std::map<Pair, std::map<uint64_t, StreamerFileState>> m_sdf; // Maps the concatenated src+dst+jobid+fileid to its State., file specific stat
+    std::set<Pair> s_activePairs; // current active (src, dst)
+    int numPM; // number of PM received
+
+    StreamerDataSource();
+    ~StreamerDataSource();
+    friend class StreamerService;
+
+    // Return a list of pairs with active or submitted transfers
+    std::list<Pair> getActivePairs(void);
+
+    // Return the optimizer configuration value
+    OptimizerMode getOptimizerMode(const std::string &source, const std::string &dest);
+
+    // Get configured limits
+    void getPairLimits(const Pair &pair, Range *range, StorageLimits *limits);
+
+    // Get the stored optimizer value (current value)
+    int getOptimizerValue(const Pair& pair);
+
+    // Get the weighted throughput for the pair
+    void getThroughputInfo(const Pair &pair, const boost::posix_time::time_duration &interval,
+        double *throughput, double *filesizeAvg, double *filesizeStdDev);
+
+    time_t getAverageDuration(const Pair &pair, const boost::posix_time::time_duration &interval);
+
+    // Get the success rate for the pair
+    double getSuccessRateForPair(const Pair &pair, const boost::posix_time::time_duration &interval,
+        int *retryCount);
+
+    // Get the number of transfers in the given state
+    int getActive(const Pair &pair);
+    int getSubmitted(const Pair &pair);
+
+    // Get current throughput
+    double getThroughputAsSource(const std::string &se);
+    double getThroughputAsDestination(const std::string &se);
+
+    // Permanently register the optimizer decision
+    void storeOptimizerDecision(const Pair &pair, int activeDecision,
+        const PairState &newState, int diff, const std::string &rationale);
+    // Permanently register the number of streams per active
+    void storeOptimizerStreams(const Pair &pair, int streams);
+};
+//}
+//}
+#endif // StreamerDataSource_H_ // Updated endif directive

@@ -1,5 +1,9 @@
 #include "StreamerDataSource.h"
 #include "common/Logger.h"
+#include "CyclicPerformanceBuffer.h"
+#include "PerformanceInterval.h"
+
+
 using namespace fts3::common;
 
 StreamerDataSource::StreamerDataSource(): numPM(0) {
@@ -45,10 +49,12 @@ void StreamerDataSource::getThroughputInfo(const Pair &pair, const boost::posix_
     //     FTS3_COMMON_LOGGER_NEWLOG(INFO) << "AAD: TotalFileSizeMB: " << pairstate << commit;
     // }
 
+
     CyclicPerformanceBuffer &cpb = pairToCyclicBuffer[pair];
-    cpb.getPairThroughputInfo(interval, throughput);  // read throughput for the interval 
+    cpb.getPairThroughputInfo(boost::posix_time::minutes(2), throughput);
+    cpb.getPairThroughputInfo(throughput, filesizeAvg, filesizeStdDev);  // read throughput for the interval 
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXG. filesizeavg, filesizestddev: " << *filesizeAvg << " " << *filesizeStdDev << commit;
-    m_sds[pair].getPairFileSizeInfo(1000, filesizeAvg, filesizeStdDev);
+    // m_sds[pair].getPairFileSizeInfo(1000, filesizeAvg, filesizeStdDev);
     FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXE. filesizeavg, filesizestddev: " << *filesizeAvg << " " << *filesizeStdDev << commit;
 
     // m_sds[pair].getPairFileSizeInfo(static_cast<uint64_t>(interval.total_microseconds()), filesizeAvg, filesizeStdDev);
@@ -62,8 +68,11 @@ time_t StreamerDataSource::getAverageDuration(const Pair &pair, const boost::pos
 // Get the success rate for the pair
 double StreamerDataSource::getSuccessRateForPair(const Pair &pair, const boost::posix_time::time_duration &interval,
     int *retryCount) {
-    int nFailedLastHour = m_sd[pair].failedCount;
-    int nFinishedLastHour = m_sd[pair].finishedCount;
+    
+    std::shared_ptr<PerformanceInterval> currentPI = pairToCyclicBuffer[pair].getCurrentPerformanceInterval();
+
+    int nFailedLastHour = currentPI->failedCount;
+    int nFinishedLastHour = currentPI->finishedCount;
     
     // TODO: Figure out which signal to use for the retryCount
     retryCount = 0;
@@ -76,11 +85,13 @@ double StreamerDataSource::getSuccessRateForPair(const Pair &pair, const boost::
 
 // Get the number of transfers in the given state
 int StreamerDataSource::getActive(const Pair &pair) {
-    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAD getActive: " << m_sd[pair].activeCount << commit;
-    return m_sd[pair].activeCount;
+    std::shared_ptr<PerformanceInterval> currentPI = pairToCyclicBuffer[pair].getCurrentPerformanceInterval();
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAD getActive: " << currentPI->activeCount << commit;
+    return currentPI->activeCount;    
 }
 int StreamerDataSource::getSubmitted(const Pair &pair) {
-    return m_sd[pair].submittedCount;
+    std::shared_ptr<PerformanceInterval> currentPI = pairToCyclicBuffer[pair].getCurrentPerformanceInterval();
+    return currentPI->submittedCount;
 }
 
 // Get current throughput
@@ -88,7 +99,9 @@ double StreamerDataSource::getThroughputAsSource(const std::string &se) {
     double totalThroughput = 0.0;
     for (const auto& pair : s_activePairs) {
         if (pair.source == se) {
-            totalThroughput += pairToCyclicBuffer[pair].getPairThroughputInfo();
+            double pairThroughput = 0.0;
+            pairToCyclicBuffer[pair].getPairThroughputInfo(boost::posix_time::minutes(2), &pairThroughput);
+            totalThroughput += pairThroughput;
         }
     }
     return totalThroughput;
@@ -98,7 +111,9 @@ double StreamerDataSource::getThroughputAsDestination(const std::string &se) {
     double totalThroughput = 0.0;
     for (const auto& pair : s_activePairs) {
         if (pair.destination == se) {
-            totalThroughput += pairToCyclicBuffer[pair].getPairThroughputInfo();
+            double pairThroughput = 0.0;
+            pairToCyclicBuffer[pair].getPairThroughputInfo(boost::posix_time::minutes(2), &pairThroughput);
+            totalThroughput += pairThroughput;
         }
     }
     return totalThroughput;

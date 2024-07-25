@@ -1,10 +1,9 @@
 #include "StreamerService.h"
-// #include <boost/filesystem.hpp>
 #include "config/ServerConfig.h"
-// #include "db/generic/SingleDbInstance.h"
-// #include "msg-bus/consumer.h"
 #include "common/Logger.h"
-//#include "url-copy/LegacyReporter.h"
+#include "PerformanceInterval.h"
+#include "CyclicPerformanceBuffer.h"
+
 
 // namespace fs = boost::filesystem;
 using fts3::config::ServerConfig;
@@ -93,61 +92,48 @@ StreamerService::StreamerService(StreamerDataSource* s): BaseService("StreamerSe
 void processTransferStart(const StreamerPerfMarker& pm, StreamerDataSource* data,
                           const Pair& pair)
 {
-    // Update m_sd
-    --data->m_sd[pair].submittedCount;
-    ++data->m_sd[pair].activeCount;
-    data->s_activePairs.insert(pair);
-    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAA:" << pair << " start active count " 
-        << data->m_sd[pair].activeCount << fts3::common::commit; 
+    // Get the interval based on pm.timestamp
+    CyclicPerformanceBuffer& cyclicBuffer = data->pairToCyclicBuffer[pair];
+    std::shared_ptr<PerformanceInterval>& perfInterval = cyclicBuffer[pm.timestamp];
 
-    // Code for handling values with units involving Bytes
-    // Update m_sdf
-    data->m_sdf[pair][pm.fileId].lastTransferredBytes = pm.transferred;
-    data->m_sdf[pair][pm.fileId].lastTimestamp = pm.timestamp;
-    
-    data->m_sds[pair].processNewTransfer(pm.timestamp, pm.userFileSize);   
+    data->s_activePairs.insert(pair);
+    perfInterval->processNewTransfer(pm);
 }
 
 void processTransferCallback(const StreamerPerfMarker& pm, StreamerDataSource* data,
                              const Pair& pair)
 {
-    auto previousTransferred = data->m_sdf[pair][pm.fileId].lastTransferredBytes;
-    auto prevTimestamp = data->m_sdf[pair][pm.fileId].lastTimestamp;
+    CyclicPerformanceBuffer& cyclicBuffer = data->pairToCyclicBuffer[pair];
+    std::shared_ptr<PerformanceInterval>& perfInterval = cyclicBuffer[pm.timestamp];
 
-    uint64_t transferDelta = pm.transferred - previousTransferred;
-    uint64_t timeDelta = pm.timestamp - prevTimestamp;
+    perfInterval->processPerformanceMarker(pm, cyclicBuffer);
 
-    // Code for handling values with units involving Bytes
-    data->pairToCyclicBuffer[pair].updateTransferred(prevTimestamp, pm.timestamp, transferDelta);
-
-
-    // Update m_sdf
-    data->m_sdf[pair][pm.fileId].lastTransferredBytes = pm.transferred;
-    data->m_sdf[pair][pm.fileId].lastTimestamp = pm.timestamp;
-
-    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAE: transferred: " << pm.transferred
-                                     << ", transferDelta: " << transferDelta
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXG Perf Marker: " << pm.transferred
+                                    //  << ", transferDelta: " << (pm.transferred - data->m_sdf[pair][pm.fileId].transferredBytes)
                                      << ", out of " << pm.userFileSize 
-                                     << ", in " << timeDelta
-                                     << ", inst tput: " << pm.instantaneousThroughput << fts3::common::commit;
+                                    //  << ", in " << (pm.timestamp - data->m_sdf[pair][pm.fileId].lastTimestamp)
+                                     << ", inst tput: " << pm.instantaneousThroughput
+                                     << fts3::common::commit;
 }
 
 void processTransferComplete(const StreamerPerfMarker& pm, StreamerDataSource* data,
                              const Pair& pair)
 {
-    if (--data->m_sd[pair].activeCount == 0) { // remove pair from activePairs
+    CyclicPerformanceBuffer& cyclicBuffer = data->pairToCyclicBuffer[pair];
+    std::shared_ptr<PerformanceInterval>& perfInterval = cyclicBuffer[pm.timestamp];
+
+    if (--perfInterval->activeCount == 0) { // remove pair from activePairs
         data->s_activePairs.erase(pair);
     }
-    ++data->m_sd[pair].finishedCount;
+    perfInterval->processComplete(pm, cyclicBuffer);
 
     // Code for handling values with units involving Bytes
-    data->pairToCyclicBuffer[pair].updateTransferred(data->m_sdf[pair][pm.fileId].lastTimestamp, pm.timestamp, pm.transferred - data->m_sdf[pair][pm.fileId].lastTransferredBytes);
-
-    // Clean up m_sdf
-    data->m_sdf[pair].erase(pm.fileId);
+    // data->pairToCyclicBuffer[pair].updateTransferred(data->m_sdf[pair][pm.fileId].lastTimestamp, pm.timestamp, pm.transferred - data->m_sdf[pair][pm.fileId].lastTransferredBytes);
+    // // Clean up m_sdf
+    // data->m_sdf[pair].erase(pm.fileId);
                              
-    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "AAA:" << pair << " complete active count " 
-        << data->m_sd[pair].activeCount << fts3::common::commit; 
+    FTS3_COMMON_LOGGER_NEWLOG(DEBUG) << "XXH:" << pair << " complete active count " 
+        << perfInterval->activeCount << fts3::common::commit; 
 }
 
 void StreamerService::runService()
